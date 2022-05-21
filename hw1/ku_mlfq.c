@@ -39,6 +39,16 @@ struct my_rq{
     int time_to_boost; // boost when 0
 };
 
+
+void init_rq(struct my_rq* rq){
+    rq->curr = 0;
+    rq->time_to_die = 0;
+    rq->time_to_boost =0;
+    rq->heads[0] =0;
+    rq->heads[1] =0;
+    rq->heads[2] =0;
+}
+
 // push task to specific prio in rq
 void push_to(struct my_rq* rq, struct my_task_struct *p, int prio){
     struct my_task_struct** phead = &(rq->heads[prio-1]);
@@ -70,9 +80,9 @@ void free_rq(struct my_rq* rq){
         struct my_task_struct* tmp,*todelete;
         tmp = rq->heads[prio];
         while(tmp!=0){
-                todelete = tmp;
-                tmp = todelete->next;
-                free(todelete);
+            todelete = tmp;
+            tmp = todelete->next;
+            free(todelete);
         }
     }    
 }
@@ -85,24 +95,12 @@ void enqueue_task(struct my_rq *rq, struct my_task_struct *p){
 }
 
 
-// push job to rq based on task values.
-void put_prev_task(struct my_rq *rq, struct my_task_struct *p){
-    p->time_left -= SP_TIMESLICE;
-    p->next = 0;
-    int degrade = (p->time_left < 1) && (p->prio > PRIO_LOW);
-    if(degrade){
-        //printf("degrade %d from %d\n",p->pid,p->prio);
-        p->prio-=1;
-        p->time_left = SP_TOLERANCE;
-    }
-    push_to(rq,p,p->prio);
-}
-
 // perform priority boost in rq
 void prio_boost(struct my_rq *rq){
     struct my_task_struct dummy;
     dummy.pid = 0;
     dummy.next = 0;
+    int prev_prio = rq->curr->prio;
 
     struct my_task_struct* head = &dummy;
 
@@ -126,18 +124,53 @@ void prio_boost(struct my_rq *rq){
         }
     }
 
-    if(head->next !=0)
-        enqueue_task(rq,head->next);
+    if((prev_prio != PRIO_HIGH) && (dummy.next !=0) && (rq->curr != dummy.next)){
+        struct my_task_struct* tmp=&dummy;
+        struct my_task_struct* curr=dummy.next;
+        while((curr != rq->curr)){
+            tmp = curr;
+            curr= curr->next;    
+        }
+        
+        struct my_task_struct* end = curr;
+        while(end->next!=0){
+            end = end->next;    
+        }
+
+        // curr == rq->curr
+        
+        end->next = dummy.next;
+        tmp->next = 0;
+        dummy.next = curr;
+        
+    }
+
+    if(dummy.next !=0)
+        enqueue_task(rq,dummy.next);
+
     rq->time_to_boost = SP_PRIOBOOST;
 }
 
-// get highest priority task
+// choose next of curr or head of highest queue which task exits
 struct my_task_struct* pick_next_task(struct my_rq *rq){
-    struct my_task_struct* ret =0;
+    struct my_task_struct* next_with_curr = 0;
+    struct my_task_struct* next_with_prio = 0;
+
+    if(rq->curr != 0) next_with_curr = rq->curr->next;
+
     for(int prio = PRIO_HIGH; prio >= PRIO_LOW; --prio){
-        if((ret = pop_from(rq,prio))!=0) break;
+        if((next_with_prio = rq->heads[prio-1])!=0) break;
     }   
-    return ret; 
+
+    if((next_with_curr == 0) || (next_with_prio ==0)){
+        if(next_with_curr) return next_with_curr;
+        return next_with_prio;
+    }
+
+    if(next_with_curr->prio >= next_with_prio->prio){
+        return next_with_curr;    
+    }
+    return next_with_prio;; 
 }
 
 // kill prev, continue next
@@ -147,7 +180,7 @@ void context_switch(struct my_rq *rq, struct my_task_struct *prev,
         kill(prev->pid,SIGSTOP);
     }
 
-    if(next!=0){
+    if(next != 0){
         rq->curr = next;
         kill(next->pid,SIGCONT);
     }
@@ -160,17 +193,38 @@ void schedule(int signo){
     rq.time_to_die -=1;
     rq.time_to_boost -=1;
 
-    if(rq.time_to_boost < 1){
-        prio_boost(&rq);
-    }
 
     struct my_task_struct* prev = rq.curr;
-    if(prev != 0) put_prev_task(&rq,prev);
-
-
     struct my_task_struct* next = pick_next_task(&rq);
-    if(rq.time_to_die < 1) next = 0;
 
+    int was_highest =  (prev != 0) && (prev->prio == PRIO_HIGH);
+    int boost = rq.time_to_boost <1;
+
+    if(boost){ // need priority boost
+        prio_boost(&rq);
+        next = pick_next_task(&rq);
+    }
+
+    if(prev != 0){    
+
+        prev->time_left -= SP_TIMESLICE;
+        if((prev->time_left < 1) && (prev->prio > PRIO_LOW)){
+
+            //printf("degrade %d from %d\n",prev->pid,prev->prio);
+
+            pop_from(&rq,prev->prio);
+            prev->prio -=1;
+            prev->time_left = SP_TOLERANCE;
+
+            push_to(&rq,prev,prev->prio);
+
+            next = pick_next_task(&rq);
+            prev->next = 0;
+        }
+    }
+
+
+    if(rq.time_to_die < 1) next = 0;
 
     context_switch(&rq,prev,next);
 
@@ -186,6 +240,7 @@ int main(int argc,char** argv){
     int n = atoi(argv[1]);
     int ts = atoi(argv[2]);
 
+    init_rq(&rq);
     rq.time_to_die = ts+1;
     rq.time_to_boost = SP_PRIOBOOST+1;
 
@@ -194,7 +249,7 @@ int main(int argc,char** argv){
         pid_t pid=0;
 
         if(pid=fork()){
-            struct my_task_struct* task = malloc(sizeof(struct my_task_struct));
+            struct my_task_struct* task = calloc(1,sizeof(struct my_task_struct));
             task->pid = pid;
             enqueue_task(&rq,task);                
         }else{
@@ -209,7 +264,7 @@ int main(int argc,char** argv){
 
     // sleep
     sleep(3);
-    
+
     // set & start timer
     struct itimerval tval;
     tval.it_interval.tv_sec=1; 
