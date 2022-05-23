@@ -5,17 +5,17 @@
 // struct ku_pte
 // ==============================
 
-struct{
+struct ku_pte{
     char value;
-} ku_pte;
+};
 
-char PFN(struct ku_pte pte){ return pte.value>>2; }
+char PFN(char  pte){ return pte>>2; }
 
-char SWAP_OFFSET(struct ku_pte pte){ return pte.value >>1; }
+char SWAP_OFFSET(char  pte){ return pte >>1; }
 
-char U(struct ku_pte pte){ return (((char) 2) & pte.value) >> 1; }
+char U(char  pte){ return (((char) 2) & pte) >> 1; }
 
-char P(struct ku_pte pte){ return 1 & pte.value; }
+char P(char  pte){ return 1 & pte; }
 
 // ==============================
 // struct pcb
@@ -33,7 +33,7 @@ Pcb* ku_mmu_pcbtail = 0;
 
 // create new pcb and append to list
 Pcb* initPcb(int pid){
-    Pcb* newPcb = (pcb*) malloc(sizeof(Pcb));
+    Pcb* newPcb = (Pcb*) malloc(sizeof(Pcb));
     newPcb->pid = pid;
     newPcb->ltable = (struct ku_pte*) calloc(256,sizeof(struct ku_pte));
     newPcb->next = 0;
@@ -65,22 +65,124 @@ Pcb* getPcb(int pid){
         if(cur->pid == pid) return cur;
         cur = cur->next;    
     }    
+    return 0;
 }
 
+// ==============================
+// Queue for fifo
+// ==============================
 
+typedef struct {
+    struct ku_pte*  pte;
+    struct Q* next;     
+} Q;
+
+int size = 0;
+Q* head = 0;
+
+void push(struct ku_pte* v){
+    Q* newQ = malloc(sizeof(Q));
+    newQ->pte = v;
+    newQ-> next = 0;
+
+    if(head == 0){
+        head = newQ;
+    }else{
+        Q* cur = head;
+        while(cur->next != 0){
+            cur = cur->next;
+        }
+        cur->next = newQ;
+    }
+    ++size;
+}
+
+struct ku_pte* pop(){
+    if(head = 0) return 0;
+    char ret = head->pte;
+    Q* tmp = head;
+    head = head->next;
+    free(tmp);
+    --size;
+    return ret;
+}
+
+char inQueue(struct ku_pte* v){
+    Q* cur = head;
+    while(cur != 0){
+        if(cur->pte ==  v) return 1;
+        cur = cur->next;    
+    }
+    return 0;   
+}
+// ==============================
+// Free list
+// ==============================
+
+// just fill linearly from start.
+// And, pcb not removed.
+// So, just fill from start till fully allocated.
+// After fully filled, what we do is just switching.
+
+int ku_mmu_mem_max=0; 
+int ku_mmu_mem_allocated = 0;
+
+int ku_mmu_swap_max = 0;
+int ku_mmu_swap_allocated = -1;
+
+#define MEM_FULL (ku_mmu_mem_max-1 == ku_mmu_mem_allocated)
+#define SWAP_FULL (ku_mmu_swap_max-1 == ku_mmu_swap_allocated)
+
+// ==============================
+// About swap
+// ==============================
 
 int ku_page_fault(char pid, char va){
-    return -1;    
+    Pcb* pcb = getPcb(pid); // pcb must be initialized by ku_run_proc
+    struct ku_pte* pte =&((pcb->ltable)[PFN(va)]); // get correspond pte
+
+    if(pte->value == 0){ // neither mapped nor swapped out -> allocate new
+        if(MEM_FULL && SWAP_FULL) return -1;
+        if(MEM_FULL){ // choose to swap out and fill in it
+            struct ku_pte* popped = pop();
+            pte->value = popped->value;
+            push(pte);
+
+            // swap pout
+            ku_mmu_swap_allocated++;
+            popped->value = ku_mmu_swap_allocated << 1;
+        }else{ //simply allocate  to memory
+            ++ku_mmu_mem_allocated;
+            pte->value = (ku_mmu_mem_allocated << 2) + 1;
+            push(pte);
+        }
+        
+    }else{ // swapped out, do swap in
+        struct ku_pte* popped = pop();
+        pte->value = popped->value;
+        push(pte);
+    }
+    return 0;    
 }
 
 void * ku_mmu_init(
     unsigned int mem_size,
     unsigned int swap_size){
     
-    void* physical_mem = malloc(sizeof(char)*mem_size());
+    void* physical_mem = malloc(sizeof(char)*mem_size);
+
+    ku_mmu_mem_max = mem_size / 4;
+    ku_mmu_swap_max = swap_size / 4;
+
     return physical_mem;    
 }
 
 int ku_run_proc(char pid,struct ku_pte** ku_cr3){
-    return -1;    
+    Pcb* pcb;
+    if((pcb = getPcb(pid)) == 0){
+        pcb = initPcb(pid);    
+    }
+
+    *ku_cr3 = pcb->ltable;
+    return 0;    
 }
