@@ -98,8 +98,8 @@ void push(struct ku_pte* v){
 }
 
 struct ku_pte* pop(){
-    if(head = 0) return 0;
-    char ret = head->pte;
+    if(head == 0) return 0;
+    struct ku_pte* ret = head->pte;
     Q* tmp = head;
     head = head->next;
     free(tmp);
@@ -130,8 +130,8 @@ int ku_mmu_mem_allocated = 0;
 int ku_mmu_swap_max = 0;
 int ku_mmu_swap_allocated = -1;
 
-#define MEM_FULL (ku_mmu_mem_max-1 == ku_mmu_mem_allocated)
-#define SWAP_FULL (ku_mmu_swap_max-1 == ku_mmu_swap_allocated)
+#define MEM_FULL (ku_mmu_mem_max-1 <= ku_mmu_mem_allocated)
+#define SWAP_FULL (ku_mmu_swap_max-1 <= ku_mmu_swap_allocated)
 
 // ==============================
 // About swap
@@ -148,7 +148,7 @@ int ku_page_fault(char pid, char va){
             pte->value = popped->value;
             push(pte);
 
-            // swap pout
+            // swap out
             ku_mmu_swap_allocated++;
             popped->value = ku_mmu_swap_allocated << 1;
         }else{ //simply allocate  to memory
