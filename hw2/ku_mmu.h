@@ -134,7 +134,7 @@ int ku_mmu_swap_allocated = 1;
 #define SWAP_FULL (ku_mmu_swap_max <= ku_mmu_swap_allocated)
 
 // ==============================
-// About swap
+// ku_page_fault
 // ==============================
 
 int ku_page_fault(char pid, char va){
@@ -169,19 +169,29 @@ int ku_page_fault(char pid, char va){
     return 0;    
 }
 
+
+// ==============================
+// ku_mmu_init
+// ==============================
+
 void * ku_mmu_init(
         unsigned int mem_size,
         unsigned int swap_size){
 
     void* physical_mem = malloc(sizeof(char)*mem_size);
 
-    ku_mmu_mem_max = mem_size / 4;
-    ku_mmu_swap_max = swap_size / 4;
+    ku_mmu_mem_max = mem_size / 4; // maximum # of memory page
+    ku_mmu_swap_max = swap_size / 4; // maximum # of swap page
 
-    ku_mmu_mem_allocated = 1; // by os
+    ku_mmu_mem_allocated = 1; // one is already got by os
 
     return physical_mem;    
 }
+
+
+// ==============================
+// ku_run_proc 
+// ==============================
 
 int ku_run_proc(char pid,struct ku_pte** ku_cr3){
     Pcb* pcb;
