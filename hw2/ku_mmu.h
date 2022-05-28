@@ -37,7 +37,7 @@ Pcb* initPcb(int pid){
     newPcb->pid = pid;
     newPcb->ltable = (struct ku_pte*) calloc(256,sizeof(struct ku_pte));
     newPcb->next = 0;
-    
+
     if(ku_mmu_pcbhead == 0 ){ // when head not exists
         ku_mmu_pcbhead = ku_mmu_pcbtail = newPcb;
     }else{ // at least one node exists
@@ -128,10 +128,10 @@ int ku_mmu_mem_max=0;
 int ku_mmu_mem_allocated = 0;
 
 int ku_mmu_swap_max = 0;
-int ku_mmu_swap_allocated = -1;
+int ku_mmu_swap_allocated = 1;
 
-#define MEM_FULL (ku_mmu_mem_max-1 <= ku_mmu_mem_allocated)
-#define SWAP_FULL (ku_mmu_swap_max-1 <= ku_mmu_swap_allocated)
+#define MEM_FULL (ku_mmu_mem_max <= ku_mmu_mem_allocated)
+#define SWAP_FULL (ku_mmu_swap_max <= ku_mmu_swap_allocated)
 
 // ==============================
 // About swap
@@ -144,35 +144,41 @@ int ku_page_fault(char pid, char va){
     if(pte->value == 0){ // neither mapped nor swapped out -> allocate new
         if(MEM_FULL && SWAP_FULL) return -1;
         if(MEM_FULL){ // choose to swap out and fill in it
-            struct ku_pte* popped = pop();
+            struct ku_pte* popped = pop(); // this will be swapped out, FIFO 
+            if(popped == 0) return -1; // only os page on memory & no other memory available
+
             pte->value = popped->value;
             push(pte);
 
             // swap out
-            ku_mmu_swap_allocated++;
-            popped->value = ku_mmu_swap_allocated << 1;
+            ++ku_mmu_swap_allocated;
+            popped->value = (ku_mmu_swap_allocated-1) << 1;
         }else{ //simply allocate  to memory
             ++ku_mmu_mem_allocated;
-            pte->value = (ku_mmu_mem_allocated << 2) + 1;
+            pte->value = ((ku_mmu_mem_allocated-1) << 2) + 1;
             push(pte);
         }
-        
+
     }else{ // swapped out, do swap in
         struct ku_pte* popped = pop();
-        pte->value = popped->value;
+        char tmp = popped -> value;
+        popped -> value = pte->value;
+        pte->value = tmp;
         push(pte);
     }
     return 0;    
 }
 
 void * ku_mmu_init(
-    unsigned int mem_size,
-    unsigned int swap_size){
-    
+        unsigned int mem_size,
+        unsigned int swap_size){
+
     void* physical_mem = malloc(sizeof(char)*mem_size);
 
     ku_mmu_mem_max = mem_size / 4;
     ku_mmu_swap_max = swap_size / 4;
+
+    ku_mmu_mem_allocated = 1; // by os
 
     return physical_mem;    
 }
