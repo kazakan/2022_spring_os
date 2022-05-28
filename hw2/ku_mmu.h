@@ -133,7 +133,7 @@ int ku_mmu_mem_max=0;
 int ku_mmu_mem_allocated = 0;
 
 int ku_mmu_swap_max = 0;
-int ku_mmu_swap_allocated = 1;
+int ku_mmu_swap_allocated = 0;
 
 #define MEM_FULL (ku_mmu_mem_max <= ku_mmu_mem_allocated)
 #define SWAP_FULL (ku_mmu_swap_max <= ku_mmu_swap_allocated)
