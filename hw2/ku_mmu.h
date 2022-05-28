@@ -1,3 +1,8 @@
+
+// Operating system assignment 2
+// 2022 Spring
+// 201813339 JunHyung Do
+
 #include <stdio.h>
 #include <stdlib.h>
 
