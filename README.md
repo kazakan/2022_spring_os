@@ -4,7 +4,7 @@ Assignments for 2022 spring operating system
 
 ## HW1
 
-Implment Multi layer feedback queue in ku_mlfq.h
+Implement Multi layer feedback queue in ku_mlfq.h
 
 
 ## HW2
