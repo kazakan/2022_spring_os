@@ -1,5 +1,7 @@
-
+*.o
 *.out
 out
 
 *.txt
+
+*.gch
